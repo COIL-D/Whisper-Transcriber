@@ -6,6 +6,9 @@ def get_version():
     try:
         import subprocess
         tag = subprocess.check_output(["git", "describe", "--tags", "--abbrev=0"]).decode().strip()
+        # Remove leading 'v' if present
+        if tag.startswith('v'):
+            tag = tag[1:]
         if re.match(r"^\d+\.\d+\.\d+$", tag):
             return tag
     except Exception:
