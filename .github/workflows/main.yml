@@ -17,6 +17,15 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install setuptools wheel twine
+    - name: Check version
+      run: |
+        VERSION=$(python setup.py --version)
+        echo "Package version: $VERSION"
+        pip install yolk3k
+        if python -m yolk -V whisper_transcriber | grep -q "$VERSION"; then
+          echo "Error: Version $VERSION already exists on PyPI"
+          exit 1
+        fi
     - name: Build and publish
       env:
         TWINE_USERNAME: __token__
