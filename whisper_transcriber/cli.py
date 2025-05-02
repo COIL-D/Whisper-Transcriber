@@ -114,7 +114,7 @@ def main():
     parser = argparse.ArgumentParser(description="Transcribe audio files using Whisper models")
     
     parser.add_argument("input", help="Input audio file or directory")
-    parser.add_argument("-o", "--output", help="Output file path (default: input filename with .srt extension)")
+    parser.add_argument("-o", "--output", help="Output file path (optional)")
     parser.add_argument("-m", "--model", default="openai/whisper-small", 
                         help="Whisper model to use (default: openai/whisper-small)")
     parser.add_argument("--hf-token", help="HuggingFace API token")
@@ -132,18 +132,12 @@ def main():
                         help="Normalize audio volume")
     parser.add_argument("--no-text-normalize", action="store_true", 
                         help="Skip text normalization")
-    parser.add_argument("--no-transcripts", action="store_true", 
-                        help="Don't print transcripts during processing")
     parser.add_argument("--no-timestamps", action="store_true", 
                         help="Don't print timestamps during processing")
     
     args = parser.parse_args()
     
     try:
-        # If no output specified, use input filename with .srt extension
-        if not args.output:
-            args.output = str(Path(args.input).with_suffix('.srt'))
-            
         # Validate inputs
         if not validate_io_paths(args.input, args.output):
             sys.exit(1)
@@ -177,7 +171,6 @@ def main():
                 batch_size=args.batch_size,
                 normalize=args.normalize,
                 normalize_text=not args.no_text_normalize,
-                print_transcripts=not args.no_transcripts,
                 print_timestamps=not args.no_timestamps
             )
             

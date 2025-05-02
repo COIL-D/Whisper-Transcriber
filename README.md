@@ -19,7 +19,7 @@ pip install whisper-transcriber
 - Adaptive audio analysis for optimal threshold detection
 - High-quality transcription using Whisper models
 - Support for various audio formats
-- SRT subtitle output
+- Optional SRT subtitle output
 
 ## Usage
 
@@ -30,7 +30,7 @@ pip install whisper-transcriber
 whisper-transcribe audio_file.mp3
 
 # Advanced usage
-whisper-transcribe audio_file.mp3 -o transcript.srt -m openai/whisper-small \
+whisper-transcribe audio_file.mp3 -m openai/whisper-small \
   --min-segment 5 \
   --max-segment 15 \
   --silence-duration 0.2 \
@@ -38,14 +38,13 @@ whisper-transcribe audio_file.mp3 -o transcript.srt -m openai/whisper-small \
   --batch-size 8 \
   --normalize \
   --hf-token YOUR_HF_TOKEN \
-  --no-transcripts \
   --no-timestamps
 ```
 
 #### Available Arguments:
 
 - `input`: Input audio file or directory (required)
-- `-o, --output`: Output file path (default: input filename with .srt extension)
+- `-o, --output`: Output file path (optional)
 - `-m, --model`: Whisper model to use (default: openai/whisper-small)
 - `--hf-token`: HuggingFace API token
 - `--min-segment`: Minimum segment length in seconds (default: 5)
@@ -55,7 +54,6 @@ whisper-transcribe audio_file.mp3 -o transcript.srt -m openai/whisper-small \
 - `--batch-size`: Batch size for transcription (default: 8)
 - `--normalize`: Normalize audio volume
 - `--no-text-normalize`: Skip text normalization
-- `--no-transcripts`: Don't print transcripts during processing
 - `--no-timestamps`: Don't print timestamps during processing
 
 ### Python Library
@@ -69,7 +67,6 @@ transcriber = WhisperTranscriber(model_name="openai/whisper-small", hf_token="YO
 # Transcribe an audio file
 results = transcriber.transcribe(
     "audio_file.mp3",
-    output="transcript.srt",
     min_segment=5,
     max_segment=15,
     silence_duration=0.2,
@@ -77,8 +74,14 @@ results = transcriber.transcribe(
     batch_size=8,
     normalize=True,
     normalize_text=True,
-    print_transcripts=True,
     print_timestamps=True
+)
+
+# Optionally save to an SRT file
+# If you want to save the transcription, provide an output path
+results = transcriber.transcribe(
+    "audio_file.mp3",
+    output="transcript.srt"
 )
 
 # Access the transcription results
