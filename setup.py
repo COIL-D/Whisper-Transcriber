@@ -5,13 +5,13 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="whisper_transcriber",
-    version="0.1.0",
-    author="Your Name",
-    author_email="your.email@example.com",
+    version="0.1.1",
+    author="Ranjan Shettigar",
+    author_email="theloko.dev@gmail.com",
     description="A library for transcribing audio files using Whisper models",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/whisper_transcriber",
+    url="https://github.com/COILDOrg/whisper-transcriber",
     packages=find_packages(),
     classifiers=[
         "Programming Language :: Python :: 3",
