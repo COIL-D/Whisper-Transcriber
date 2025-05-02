@@ -30,7 +30,7 @@ pip install whisper-transcriber
 whisper-transcribe audio_file.mp3
 
 # Advanced usage
-whisper-transcribe audio_file.mp3 --model loko99/whisper_small_kannada --output transcript.srt --min-segment 3 --max-segment 12
+whisper-transcribe audio_file.mp3 --model openai/whisper-smal --output transcript.srt --min-segment 3 --max-segment 12
 ```
 
 ### Python Library
