@@ -3,6 +3,8 @@
 import subprocess
 import re
 import numpy as np
+import os
+from .utils import validate_file_path
 
 
 def get_audio_duration(input_file):
@@ -15,6 +17,11 @@ def get_audio_duration(input_file):
     Returns:
         float: Duration of the audio file in seconds
     """
+    # Validate file path before using in subprocess
+    if not os.path.exists(input_file) or not validate_file_path(input_file):
+        print(f"Error: Invalid or unsafe file path: {input_file}")
+        return 0.0
+        
     command = [
         "ffprobe",
         "-v", "error",
@@ -23,8 +30,9 @@ def get_audio_duration(input_file):
         input_file
     ]
     try:
-        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
-        duration = float(result.stdout.decode().strip())
+        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, 
+                              check=True, shell=False, text=True)
+        duration = float(result.stdout.strip())
         return duration
     except (subprocess.SubprocessError, ValueError) as e:
         print(f"Error getting audio duration: {e}")
@@ -41,6 +49,11 @@ def analyze_audio_levels(input_file):
     Returns:
         float: Dynamically calculated silence threshold based on audio characteristics
     """
+    # Validate file path before using in subprocess
+    if not os.path.exists(input_file) or not validate_file_path(input_file):
+        print(f"Error: Invalid or unsafe file path: {input_file}")
+        return -30.0  # Default if validation fails
+        
     command = [
         "ffmpeg",
         "-i", input_file,
@@ -49,8 +62,9 @@ def analyze_audio_levels(input_file):
     ]
     
     try:
-        process = subprocess.run(command, stderr=subprocess.PIPE, stdout=subprocess.PIPE, check=True)
-        stderr_output = process.stderr.decode()
+        process = subprocess.run(command, stderr=subprocess.PIPE, stdout=subprocess.PIPE, 
+                               check=True, shell=False, text=True)
+        stderr_output = process.stderr
         
         # Look for mean_volume and max_volume in the output
         mean_match = re.search(r"mean_volume:\s*([-\d\.]+)\s*dB", stderr_output)
@@ -94,6 +108,11 @@ def _detect_silence_points(input_file, silence_threshold, silence_duration):
     Returns:
         list: List of dictionaries containing silence points
     """
+    # Validate file path
+    if not os.path.exists(input_file) or not validate_file_path(input_file):
+        print(f"Error: Invalid or unsafe file path: {input_file}")
+        return []
+        
     command = [
         "ffmpeg",
         "-i", input_file,
@@ -102,8 +121,9 @@ def _detect_silence_points(input_file, silence_threshold, silence_duration):
     ]
     
     try:
-        process = subprocess.run(command, stderr=subprocess.PIPE, stdout=subprocess.PIPE, check=True)
-        stderr_output = process.stderr.decode()
+        process = subprocess.run(command, stderr=subprocess.PIPE, stdout=subprocess.PIPE, 
+                               check=True, shell=False, text=True)
+        stderr_output = process.stderr
         
         # Store both silence starts and ends
         silence_data = []
@@ -152,6 +172,11 @@ def analyze_full_audio_for_silence(input_file, silence_threshold=-30, silence_du
     Returns:
         list: List of silence points
     """
+    # Validate file path
+    if not os.path.exists(input_file) or not validate_file_path(input_file):
+        print(f"Error: Invalid or unsafe file path: {input_file}")
+        return []
+        
     if adaptive:
         silence_threshold = analyze_audio_levels(input_file)
         print(f"Using adaptive silence threshold: {silence_threshold:.2f}dB")

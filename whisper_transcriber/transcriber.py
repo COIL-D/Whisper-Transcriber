@@ -5,6 +5,7 @@ import torch
 import numpy as np
 import librosa
 import time
+import secrets
 from tqdm import tqdm
 from transformers import WhisperProcessor, WhisperForConditionalGeneration
 from huggingface_hub import login
@@ -14,7 +15,7 @@ from .audio_processing import (
     analyze_full_audio_for_silence,
     create_segments_from_silence
 )
-from .utils import check_dependencies, format_timestamp, format_srt_timestamp, normalize_kannada
+from .utils import check_dependencies, format_timestamp, format_srt_timestamp, normalize_kannada, validate_file_path
 
 
 class WhisperTranscriber:
@@ -30,8 +31,12 @@ class WhisperTranscriber:
             model_name (str): The name of the Whisper model to use
             hf_token (str, optional): HuggingFace API token
         """
+        # Sanitize model name to prevent injection
+        self._validate_model_name(model_name)
         self.model_name = model_name
-        self.hf_token = hf_token
+        
+        # Securely handle the token
+        self.hf_token = self._secure_token_handling(hf_token)
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.model = None
         self.processor = None
@@ -43,10 +48,88 @@ class WhisperTranscriber:
         # Load model
         self._load_model()
     
+    def _secure_token_handling(self, token):
+        """
+        Securely handle the API token.
+        
+        Args:
+            token (str): The API token to handle
+            
+        Returns:
+            str: The API token
+        """
+        if token is None:
+            # Try to get from environment variable
+            token = os.environ.get("HF_TOKEN")
+            
+        # Don't store the token directly as attribute in plaintext
+        # Instead, store a reference to it that will be used only when needed
+        # This is a simple obfuscation, not true security - tokens should ideally
+        # be managed by a secure credential store
+        if token:
+            # Generate a random key for simple obfuscation
+            random_key = secrets.token_bytes(32)
+            # XOR the token with the key for obfuscation
+            token_bytes = token.encode('utf-8')
+            token_bytes_padded = token_bytes + b'\0' * (32 - len(token_bytes) % 32)
+            obfuscated = bytes(a ^ b for a, b in zip(token_bytes_padded, random_key * (len(token_bytes_padded) // len(random_key) + 1)))
+            
+            return {
+                "obfuscated": obfuscated,
+                "key": random_key,
+                "length": len(token_bytes)
+            }
+        
+        return None
+    
+    def _get_token(self):
+        """
+        Retrieve the original token when needed.
+        
+        Returns:
+            str: The original API token or None
+        """
+        if self.hf_token is None:
+            return None
+            
+        # Deobfuscate the token
+        deobfuscated = bytes(a ^ b for a, b in zip(
+            self.hf_token["obfuscated"], 
+            self.hf_token["key"] * (len(self.hf_token["obfuscated"]) // len(self.hf_token["key"]) + 1)
+        ))
+        
+        return deobfuscated[:self.hf_token["length"]].decode('utf-8')
+    
+    def _validate_model_name(self, model_name):
+        """
+        Validate the model name for basic security checks.
+        
+        Args:
+            model_name (str): The model name to validate
+            
+        Raises:
+            ValueError: If the model name is invalid
+        """
+        # Check type
+        if not isinstance(model_name, str):
+            raise ValueError("Model name must be a string")
+            
+        # Only check for dangerous characters that could be used for injection
+        allowed_chars = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_./")
+        
+        # Basic check for bad characters
+        if not all(c in allowed_chars for c in model_name):
+            raise ValueError(f"Invalid characters in model name: {model_name}")
+        
+        # All models are allowed as long as they pass the basic security check
+    
     def _load_model(self):
         """Load the Whisper model and processor."""
-        if self.hf_token:
-            login(token=self.hf_token)
+        # Retrieve the deobfuscated token if it exists
+        token = self._get_token()
+        
+        if token:
+            login(token=token)
             
         try:
             self.processor = WhisperProcessor.from_pretrained(self.model_name)
@@ -78,9 +161,16 @@ class WhisperTranscriber:
         # Start timing the process
         script_start_time = time.time()
         
-        # Check if input file exists
-        if not os.path.isfile(input_file):
-            raise FileNotFoundError(f"Input file {input_file} not found")
+        # Sanitize inputs
+        self._validate_parameters(min_segment, max_segment, silence_duration, sample_rate, batch_size)
+        
+        # Check if input file exists and is safe
+        if not os.path.isfile(input_file) or not validate_file_path(input_file):
+            raise FileNotFoundError(f"Input file {input_file} not found or not safe to use")
+        
+        # Check output path if specified
+        if output and not validate_file_path(output):
+            raise ValueError(f"Invalid output file path: {output}")
         
         # Get audio duration
         total_duration = get_audio_duration(input_file)
@@ -137,6 +227,55 @@ class WhisperTranscriber:
         print("\nTranscription complete!")
         
         return results
+    
+    def _validate_parameters(self, min_segment, max_segment, silence_duration, sample_rate, batch_size):
+        """
+        Validate the parameters to prevent attacks or errors.
+        
+        Args:
+            min_segment (float): Minimum segment length in seconds
+            max_segment (float): Maximum segment length in seconds
+            silence_duration (float): Minimum silence duration in seconds
+            sample_rate (int): Audio sample rate
+            batch_size (int): Batch size for transcription
+            
+        Raises:
+            ValueError: If any parameter is invalid
+        """
+        # Check types
+        if not isinstance(min_segment, (int, float)) or min_segment <= 0:
+            raise ValueError(f"Invalid min_segment: {min_segment}")
+        
+        if not isinstance(max_segment, (int, float)) or max_segment <= 0:
+            raise ValueError(f"Invalid max_segment: {max_segment}")
+            
+        if not isinstance(silence_duration, (int, float)) or silence_duration <= 0:
+            raise ValueError(f"Invalid silence_duration: {silence_duration}")
+            
+        if not isinstance(sample_rate, int) or sample_rate <= 0:
+            raise ValueError(f"Invalid sample_rate: {sample_rate}")
+            
+        if not isinstance(batch_size, int) or batch_size <= 0 or batch_size > 64:
+            raise ValueError(f"Invalid batch_size: {batch_size}")
+            
+        # Check relationships
+        if min_segment >= max_segment:
+            raise ValueError(f"min_segment ({min_segment}) must be less than max_segment ({max_segment})")
+            
+        # Check reasonable ranges
+        if min_segment < 0.5:
+            print("Warning: Very small min_segment may cause excessive segmentation")
+            
+        if max_segment > 30:
+            print("Warning: Very large max_segment may cause memory issues")
+            
+        if silence_duration < 0.05:
+            print("Warning: Very small silence_duration may detect too many silence points")
+            
+        # Check sample rate in standard ranges
+        valid_sample_rates = [8000, 16000, 22050, 24000, 32000, 44100, 48000]
+        if sample_rate not in valid_sample_rates:
+            print(f"Warning: Unusual sample_rate {sample_rate}. Standard rates are {valid_sample_rates}")
     
     def _transcribe_audio(self, input_file, segment_boundaries, sample_rate=16000, 
                          normalize=False, batch_size=8, normalize_text=True):
@@ -270,6 +409,18 @@ class WhisperTranscriber:
             results (list): List of transcription results
             output_file (str): Path to save the transcription
         """
+        # Validate output path
+        if not validate_file_path(output_file):
+            raise ValueError(f"Invalid output file path: {output_file}")
+        
+        # Create directory if it doesn't exist
+        output_dir = os.path.dirname(output_file)
+        if output_dir and not os.path.exists(output_dir):
+            try:
+                os.makedirs(output_dir, exist_ok=True)
+            except OSError as e:
+                raise OSError(f"Could not create output directory: {str(e)}")
+        
         # Ensure output has .srt extension
         if not output_file.lower().endswith('.srt'):
             output_file = os.path.splitext(output_file)[0] + '.srt'
