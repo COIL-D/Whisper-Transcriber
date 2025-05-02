@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="whisper_transcriber",
-    version="0.1.9",
+    version="0.1.8",
     author="Ranjan Shettigar",
     author_email="theloko.dev@gmail.com",
     description="A library for transcribing audio files using Whisper models",
