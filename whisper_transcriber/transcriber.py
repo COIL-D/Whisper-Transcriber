@@ -140,7 +140,7 @@ class WhisperTranscriber:
     
     def transcribe(self, input_file, output=None, min_segment=5, max_segment=15, 
                   silence_duration=0.2, sample_rate=16000, batch_size=8, 
-                  normalize=False, normalize_text=True, print_timestamps=False):
+                  normalize=False, normalize_text=True, print_timestamps=False, **kwargs):
         """
         Transcribe an audio file and optionally save the results to a file.
         
@@ -155,6 +155,7 @@ class WhisperTranscriber:
             normalize (bool): Whether to normalize audio
             normalize_text (bool): Whether to normalize transcription text
             print_timestamps (bool): Whether to print timestamps during processing
+            **kwargs: Additional parameters for future compatibility
             
         Returns:
             list: List of transcription results
