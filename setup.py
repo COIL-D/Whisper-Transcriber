@@ -1,3 +1,4 @@
+
 from setuptools import setup, find_packages
 
 with open("README.md", "r", encoding="utf-8") as fh:
@@ -13,6 +14,7 @@ setup(
     long_description_content_type="text/markdown",
     url="https://github.com/COILDOrg/whisper-transcriber",
     packages=find_packages(),
+    license="MIT",
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
