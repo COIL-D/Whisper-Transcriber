@@ -132,6 +132,10 @@ def main():
                         help="Normalize audio volume")
     parser.add_argument("--no-text-normalize", action="store_true", 
                         help="Skip text normalization")
+    parser.add_argument("--no-transcripts", action="store_true", 
+                        help="Don't print transcripts during processing")
+    parser.add_argument("--no-timestamps", action="store_true", 
+                        help="Don't print timestamps during processing")
     
     args = parser.parse_args()
     
@@ -172,7 +176,9 @@ def main():
                 sample_rate=args.sample_rate,
                 batch_size=args.batch_size,
                 normalize=args.normalize,
-                normalize_text=not args.no_text_normalize
+                normalize_text=not args.no_text_normalize,
+                print_transcripts=not args.no_transcripts,
+                print_timestamps=not args.no_timestamps
             )
             
         except Exception as e:

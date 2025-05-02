@@ -30,8 +30,33 @@ pip install whisper-transcriber
 whisper-transcribe audio_file.mp3
 
 # Advanced usage
-whisper-transcribe audio_file.mp3 --model openai/whisper-smal --output transcript.srt --min-segment 3 --max-segment 12
+whisper-transcribe audio_file.mp3 -o transcript.srt -m openai/whisper-small \
+  --min-segment 5 \
+  --max-segment 15 \
+  --silence-duration 0.2 \
+  --sample-rate 16000 \
+  --batch-size 8 \
+  --normalize \
+  --hf-token YOUR_HF_TOKEN \
+  --no-transcripts \
+  --no-timestamps
 ```
+
+#### Available Arguments:
+
+- `input`: Input audio file or directory (required)
+- `-o, --output`: Output file path (default: input filename with .srt extension)
+- `-m, --model`: Whisper model to use (default: openai/whisper-small)
+- `--hf-token`: HuggingFace API token
+- `--min-segment`: Minimum segment length in seconds (default: 5)
+- `--max-segment`: Maximum segment length in seconds (default: 15)
+- `--silence-duration`: Minimum silence duration in seconds (default: 0.2)
+- `--sample-rate`: Audio sample rate (default: 16000)
+- `--batch-size`: Batch size for transcription (default: 8)
+- `--normalize`: Normalize audio volume
+- `--no-text-normalize`: Skip text normalization
+- `--no-transcripts`: Don't print transcripts during processing
+- `--no-timestamps`: Don't print timestamps during processing
 
 ### Python Library
 
@@ -47,7 +72,13 @@ results = transcriber.transcribe(
     output="transcript.srt",
     min_segment=5,
     max_segment=15,
-    normalize_text=True
+    silence_duration=0.2,
+    sample_rate=16000,
+    batch_size=8,
+    normalize=True,
+    normalize_text=True,
+    print_transcripts=True,
+    print_timestamps=True
 )
 
 # Access the transcription results

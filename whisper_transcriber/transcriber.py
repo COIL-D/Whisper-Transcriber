@@ -140,7 +140,7 @@ class WhisperTranscriber:
     
     def transcribe(self, input_file, output=None, min_segment=5, max_segment=15, 
                   silence_duration=0.2, sample_rate=16000, batch_size=8, 
-                  normalize=False, normalize_text=True):
+                  normalize=False, normalize_text=True, print_transcripts=True, print_timestamps=True):
         """
         Transcribe an audio file and optionally save the results to a file.
         
@@ -154,6 +154,8 @@ class WhisperTranscriber:
             batch_size (int): Batch size for transcription
             normalize (bool): Whether to normalize audio
             normalize_text (bool): Whether to normalize transcription text
+            print_transcripts (bool): Whether to print transcripts during processing
+            print_timestamps (bool): Whether to print timestamps during processing
             
         Returns:
             list: List of transcription results
@@ -203,7 +205,9 @@ class WhisperTranscriber:
             sample_rate=sample_rate,
             normalize=normalize,
             batch_size=batch_size,
-            normalize_text=normalize_text
+            normalize_text=normalize_text,
+            print_transcripts=print_transcripts,
+            print_timestamps=print_timestamps
         )
         
         if not results:
@@ -278,7 +282,7 @@ class WhisperTranscriber:
             print(f"Warning: Unusual sample_rate {sample_rate}. Standard rates are {valid_sample_rates}")
     
     def _transcribe_audio(self, input_file, segment_boundaries, sample_rate=16000, 
-                         normalize=False, batch_size=8, normalize_text=True):
+                         normalize=False, batch_size=8, normalize_text=True, print_transcripts=True, print_timestamps=True):
         """
         Transcribes audio using segment boundaries for timing information.
         
@@ -289,6 +293,8 @@ class WhisperTranscriber:
             normalize (bool): Whether to normalize audio
             batch_size (int): Batch size for transcription
             normalize_text (bool): Whether to normalize transcription text
+            print_transcripts (bool): Whether to print transcripts during processing
+            print_timestamps (bool): Whether to print timestamps during processing
             
         Returns:
             list: List of transcription results
@@ -387,9 +393,20 @@ class WhisperTranscriber:
                             results.append(result)
                             
                             # Print each result immediately
-                            segment_start_time_str = format_timestamp(segment["start"])
-                            segment_end_time_str = format_timestamp(segment["end"])
-                            print(f"\nSegment {segment['index']+1}: [{segment_start_time_str} --> {segment_end_time_str}] {transcript}")
+                            if print_transcripts or print_timestamps:
+                                output_line = f"\nSegment {segment['index']+1}: "
+                                
+                                # Only add timestamps if requested
+                                if print_timestamps:
+                                    segment_start_time_str = format_timestamp(segment["start"])
+                                    segment_end_time_str = format_timestamp(segment["end"])
+                                    output_line += f"[{segment_start_time_str} --> {segment_end_time_str}] "
+                                
+                                # Only add transcript if requested
+                                if print_transcripts:
+                                    output_line += transcript
+                                    
+                                print(output_line)
                 except Exception as e:
                     print(f"Error transcribing batch: {str(e)}")
             
