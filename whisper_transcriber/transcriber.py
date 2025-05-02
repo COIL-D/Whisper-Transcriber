@@ -390,7 +390,7 @@ class WhisperTranscriber:
                             results.append(result)
                             
                             # Print transcript with optional timestamps
-                            # output_line = f"\nSegment {segment['index']+1}: "
+                            output_line = "\n"
                             
                             # Only add timestamps if requested
                             if print_timestamps:
