@@ -8,42 +8,17 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.x'
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install setuptools wheel twine
-    - name: Clean previous builds
-      run: |
-        # Remove any previous build artifacts
-        rm -rf dist/ build/ *.egg-info/
-    - name: Debug version
-      run: |
-        VERSION=$(python setup.py --version)
-        echo "Building version: $VERSION"
-        echo "Contents of setup.py:"
-        cat setup.py
-    - name: Check PyPI version availability
-      continue-on-error: true
-      run: |
-        pip install pip-check-reqs
-        if pip install whisper_transcriber==$(python setup.py --version) 2>/dev/null; then
-          echo "Error: Version $(python setup.py --version) already exists on PyPI"
-          pip uninstall -y whisper_transcriber
-          exit 1
-        fi
-        echo "Version check passed. Proceeding with build."
-    - name: Build and publish
-      env:
-        TWINE_USERNAME: __token__
-        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-      run: |
-        python setup.py sdist bdist_wheel
-        echo "Built package with version: $(python setup.py --version)"
-        echo "Files to be uploaded:"
-        ls -la dist/
-        twine upload dist/*
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+      - run: |
+          python -m pip install --upgrade pip
+          pip install setuptools wheel twine
+      - run: rm -rf dist/ build/ *.egg-info/
+      - env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          python setup.py sdist bdist_wheel
+          twine upload dist/*

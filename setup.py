@@ -1,11 +1,23 @@
 from setuptools import setup, find_packages
+import os
+import re
+
+def get_version():
+    try:
+        import subprocess
+        tag = subprocess.check_output(["git", "describe", "--tags", "--abbrev=0"]).decode().strip()
+        if re.match(r"^\d+\.\d+\.\d+$", tag):
+            return tag
+    except Exception:
+        pass
+    return "0.0.0"
 
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 setup(
     name="whisper_transcriber",
-    version="0.2.0",
+    version=get_version(),
     author="Ranjan Shettigar",
     author_email="theloko.dev@gmail.com",
     description="A library for transcribing audio files using Whisper models",
