@@ -134,6 +134,10 @@ def main():
                         help="Skip text normalization")
     parser.add_argument("--no-timestamps", action="store_true", 
                         help="Don't print timestamps during processing")
+    parser.add_argument("--quiet", action="store_true",
+                        help="Run in quiet mode (suppress transcript printing)")
+    parser.add_argument("--json", action="store_true",
+                        help="Output results as JSON instead of text")
     
     args = parser.parse_args()
     
@@ -161,7 +165,10 @@ def main():
         try:
             transcriber = WhisperTranscriber(args.model, args.hf_token)
             
-            transcriber.transcribe(
+            # Determine verbosity - always set to False for JSON output
+            verbose = not args.quiet and not args.json
+            
+            results = transcriber.transcribe(
                 args.input,
                 output=args.output,
                 min_segment=args.min_segment,
@@ -171,8 +178,22 @@ def main():
                 batch_size=args.batch_size,
                 normalize=args.normalize,
                 normalize_text=not args.no_text_normalize,
-                print_timestamps=not args.no_timestamps
+                print_timestamps=not args.no_timestamps,
+                verbose=verbose
             )
+            
+            # Handle JSON output if requested
+            if args.json and results:
+                import json
+                # Convert the results to a serializable format
+                serializable_results = []
+                for segment in results:
+                    serializable_results.append({
+                        "start": segment["start"],
+                        "end": segment["end"],
+                        "transcript": segment["transcript"]
+                    })
+                print(json.dumps(serializable_results, ensure_ascii=False, indent=2))
             
         except Exception as e:
             print(f"Error during transcription: {str(e)}")

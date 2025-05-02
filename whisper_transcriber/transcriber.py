@@ -140,7 +140,8 @@ class WhisperTranscriber:
     
     def transcribe(self, input_file, output=None, min_segment=5, max_segment=15, 
                   silence_duration=0.2, sample_rate=16000, batch_size=8, 
-                  normalize=False, normalize_text=True, print_timestamps=False, **kwargs):
+                  normalize=False, normalize_text=True, print_timestamps=False, 
+                  verbose=True, **kwargs):
         """
         Transcribe an audio file and optionally save the results to a file.
         
@@ -155,6 +156,7 @@ class WhisperTranscriber:
             normalize (bool): Whether to normalize audio
             normalize_text (bool): Whether to normalize transcription text
             print_timestamps (bool): Whether to print timestamps during processing
+            verbose (bool): Whether to print processing information and transcripts during processing
             **kwargs: Additional parameters for future compatibility
             
         Returns:
@@ -179,7 +181,8 @@ class WhisperTranscriber:
         if total_duration <= 0:
             raise ValueError(f"Could not determine duration of {input_file}")
         
-        print(f"Processing file: {input_file} (duration: {total_duration:.2f} seconds)")
+        if verbose:
+            print(f"Processing file: {input_file} (duration: {total_duration:.2f} seconds)")
         
         # Analyze audio for silence points
         silence_data = analyze_full_audio_for_silence(
@@ -198,7 +201,8 @@ class WhisperTranscriber:
         )
         
         # Transcribe using segment boundaries
-        print("Starting transcription...")
+        if verbose:
+            print("Starting transcription...")
         results = self._transcribe_audio(
             input_file,
             segment_boundaries,
@@ -206,7 +210,8 @@ class WhisperTranscriber:
             normalize=normalize,
             batch_size=batch_size,
             normalize_text=normalize_text,
-            print_timestamps=print_timestamps
+            print_timestamps=print_timestamps,
+            verbose=verbose
         )
         
         if not results:
@@ -217,17 +222,18 @@ class WhisperTranscriber:
             self.save_transcription(results, output)
         
         # Calculate and display the total processing time
-        end_time = time.time()
-        elapsed_time = end_time - script_start_time
-        
-        # Format the elapsed time
-        hours = int(elapsed_time // 3600)
-        minutes = int((elapsed_time % 3600) // 60)
-        seconds = elapsed_time % 60
-        
-        time_format = f"{hours:02d}:{minutes:02d}:{seconds:06.3f}" if hours > 0 else f"{minutes:02d}:{seconds:06.3f}"
-        print(f"\nTotal processing time: {time_format}")
-        print("\nTranscription complete!")
+        if verbose:
+            end_time = time.time()
+            elapsed_time = end_time - script_start_time
+            
+            # Format the elapsed time
+            hours = int(elapsed_time // 3600)
+            minutes = int((elapsed_time % 3600) // 60)
+            seconds = elapsed_time % 60
+            
+            time_format = f"{hours:02d}:{minutes:02d}:{seconds:06.3f}" if hours > 0 else f"{minutes:02d}:{seconds:06.3f}"
+            print(f"\nTotal processing time: {time_format}")
+            print("\nTranscription complete!")
         
         return results
     
@@ -281,7 +287,8 @@ class WhisperTranscriber:
             print(f"Warning: Unusual sample_rate {sample_rate}. Standard rates are {valid_sample_rates}")
     
     def _transcribe_audio(self, input_file, segment_boundaries, sample_rate=16000, 
-                         normalize=False, batch_size=8, normalize_text=True, print_timestamps=False):
+                         normalize=False, batch_size=8, normalize_text=True, 
+                         print_timestamps=False, verbose=True):
         """
         Transcribes audio using segment boundaries for timing information.
         
@@ -293,6 +300,7 @@ class WhisperTranscriber:
             batch_size (int): Batch size for transcription
             normalize_text (bool): Whether to normalize transcription text
             print_timestamps (bool): Whether to print timestamps during processing
+            verbose (bool): Whether to print progress and transcripts during processing
             
         Returns:
             list: List of transcription results
@@ -310,16 +318,19 @@ class WhisperTranscriber:
             if duration >= min_valid_duration:
                 segment_pairs.append((start, end))
             else:
-                print(f"Warning: Skipping invalid segment with duration {duration:.3f}s [{format_timestamp(start)} --> {format_timestamp(end)}]")
+                if verbose:
+                    print(f"Warning: Skipping invalid segment with duration {duration:.3f}s [{format_timestamp(start)} --> {format_timestamp(end)}]")
         
-        print(f"Processing {len(segment_pairs)} audio segments...")
+        if verbose:
+            print(f"Processing {len(segment_pairs)} audio segments...")
         results = []
         
         # Load the full audio file
         try:
             full_audio, _ = librosa.load(input_file, sr=sample_rate, mono=True)
         except Exception as e:
-            print(f"Error loading audio file: {e}")
+            if verbose:
+                print(f"Error loading audio file: {e}")
             return []
         
         # Process in batches to optimize memory usage and GPU utilization
@@ -389,21 +400,22 @@ class WhisperTranscriber:
                             
                             results.append(result)
                             
-                            # Print transcript with optional timestamps
-                            output_line = "\n"
-                            
-                            # Only add timestamps if requested
-                            if print_timestamps:
-                                segment_start_time_str = format_timestamp(segment["start"])
-                                segment_end_time_str = format_timestamp(segment["end"])
-                                output_line += f"[{segment_start_time_str} --> {segment_end_time_str}] "
-                            
-                            # Always add transcript (default behavior)
-                            output_line += transcript
+                            # Only print if verbose mode is enabled
+                            if verbose:
+                                output_line = "\n"
                                 
-                            print(output_line)
+                                # Only add timestamps if requested
+                                if print_timestamps:
+                                    segment_start_time_str = format_timestamp(segment["start"])
+                                    segment_end_time_str = format_timestamp(segment["end"])
+                                    output_line += f"[{segment_start_time_str} --> {segment_end_time_str}] "
+                                
+                                # Add transcript only in verbose mode
+                                output_line += transcript
+                                print(output_line)
                 except Exception as e:
-                    print(f"Error transcribing batch: {str(e)}")
+                    if verbose:
+                        print(f"Error transcribing batch: {str(e)}")
             
         
         # Sort results by their original index
