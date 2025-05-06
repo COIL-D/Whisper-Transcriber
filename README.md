@@ -1,5 +1,7 @@
 # Whisper Transcriber
 
+[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/whisper-transcriber?logo=python&logoColor=white)](https://pypi.org/project/whisper-transcriber/)
+
 A Python library for transcribing audio files using Whisper models with intelligent silence detection and segmentation.
 
 ## Installation
