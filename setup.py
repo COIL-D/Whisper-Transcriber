@@ -44,6 +44,7 @@ setup(
         "huggingface_hub",
         "regex",
         "pathlib",
+        "concurrent-log-handler",  # For better logging with multiprocessing
     ],
     entry_points={
         "console_scripts": [

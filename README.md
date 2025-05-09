@@ -19,6 +19,10 @@ pip install whisper-transcriber
 
 - Intelligent silence detection for natural segmentation
 - Adaptive audio analysis for optimal threshold detection
+- Memory-efficient processing of large audio files
+- Parallel processing for faster silence detection
+- Two-pass transcription for improved segment boundaries
+- Enhanced generation parameters for controlling output quality
 - High-quality transcription using Whisper models
 - Support for various audio formats
 - Optional SRT subtitle output
@@ -44,6 +48,12 @@ whisper-transcribe audio_file.mp3 -m openai/whisper-small \
   --hf-token YOUR_HF_TOKEN \
   --no-timestamps
 
+# Memory-efficient processing with parallel jobs
+whisper-transcribe long_audio.mp3 --chunk-size 900 --parallel-jobs 4
+
+# Enhanced generation with two-pass transcription
+whisper-transcribe podcast.mp3 --two-pass --temperature 0.1 --beam-size 8
+
 # Run in quiet mode (no transcript printing during processing)
 whisper-transcribe audio_file.mp3 --quiet
 
@@ -67,6 +77,12 @@ whisper-transcribe audio_file.mp3 --json
 - `--no-timestamps`: Don't print timestamps during processing
 - `--quiet`: Run in quiet mode (suppress transcript printing)
 - `--json`: Output results as JSON instead of text
+- `--chunk-size`: Size of audio chunks in seconds for memory-efficient processing (default: 600)
+- `--parallel-jobs`: Number of parallel jobs for silence detection (default: automatic)
+- `--two-pass`: Use two-pass transcription for improved segment boundaries
+- `--temperature`: Temperature for sampling, higher values make output more random (default: 0.0)
+- `--top-p`: Top-p sampling probability threshold (default: None)
+- `--beam-size`: Beam size for beam search (default: 5)
 
 ### Python Library
 
@@ -76,7 +92,7 @@ from whisper_transcriber import WhisperTranscriber
 # Initialize the transcriber
 transcriber = WhisperTranscriber(model_name="openai/whisper-small", hf_token="YOUR_HF_TOKEN")
 
-# Transcribe an audio file with automatic transcript printing
+# Basic transcription
 results = transcriber.transcribe(
     "audio_file.mp3",
     min_segment=5,
@@ -87,22 +103,35 @@ results = transcriber.transcribe(
     normalize=True,
     normalize_text=True,
     print_timestamps=True,
-    verbose=False
+    verbose=True
 )
 
-
+# Advanced transcription with memory optimization and enhanced generation
+results = transcriber.transcribe(
+    "long_audio.mp3",
+    output="transcript.srt",
+    min_segment=5,
+    max_segment=15,
+    silence_duration=0.2,
+    sample_rate=16000,
+    batch_size=8,
+    normalize=True,
+    normalize_text=True,
+    print_timestamps=True,
+    verbose=True,
+    # New advanced parameters
+    two_pass=True,              # Use two-pass transcription for better segments
+    chunk_size=900,             # Process in 15-min chunks (memory efficient)
+    parallel_jobs=4,            # Use 4 parallel processes for silence detection
+    temperature=0.1,            # Slightly non-deterministic output
+    top_p=0.95,                 # Nucleus sampling for more natural text
+    beam_size=8                 # Larger beam search for better quality
+)
 
 # Access the transcription results manually
 for i, segment in enumerate(results):
     print(f"\n[{segment['start']} --> {segment['end']}]")
     print(f"Segment {i+1}: {segment['transcript']}")
-
-# Optionally save to an SRT file
-# If you want to save the transcription, provide an output path
-results = transcriber.transcribe(
-    "audio_file.mp3",
-    output="transcript.srt"
-)
 ```
 
 ## Parameters Explained
@@ -117,6 +146,15 @@ results = transcriber.transcribe(
 - `normalize_text`: Whether to normalize transcription text
 - `print_timestamps`: Whether to include timestamps when printing transcripts
 - `verbose`: Whether to print processing information and transcripts during transcription
+
+### Advanced Parameters
+
+- `two_pass`: Use two-pass transcription to refine segment boundaries based on linguistic analysis
+- `chunk_size`: Size of audio chunks in seconds for memory-efficient processing of large files
+- `parallel_jobs`: Number of parallel jobs for silence detection (None for automatic)
+- `temperature`: Controls randomness in generation (0.0 for deterministic, higher for more variety)
+- `top_p`: Top-p probability threshold for nucleus sampling (between 0 and 1)
+- `beam_size`: Beam size for beam search during generation (higher values = better quality but slower)
 
 ## License
 

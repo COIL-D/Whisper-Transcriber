@@ -106,6 +106,27 @@ def validate_numeric_args(args):
         print(f"Error: batch-size ({args.batch_size}) must be between 1 and 64")
         return False
         
+    # New parameter checks
+    if args.temperature < 0 or args.temperature > 1.5:
+        print(f"Error: temperature ({args.temperature}) must be between 0.0 and 1.5")
+        return False
+        
+    if args.top_p is not None and (args.top_p <= 0 or args.top_p >= 1):
+        print(f"Error: top_p ({args.top_p}) must be between 0 and 1")
+        return False
+        
+    if args.beam_size < 1 or args.beam_size > 10:
+        print(f"Error: beam_size ({args.beam_size}) must be between 1 and 10")
+        return False
+        
+    if args.chunk_size < 10 or args.chunk_size > 3600:
+        print(f"Error: chunk_size ({args.chunk_size}) must be between 10 and 3600 seconds")
+        return False
+        
+    if args.parallel_jobs is not None and args.parallel_jobs < 1:
+        print(f"Error: parallel_jobs ({args.parallel_jobs}) must be at least 1")
+        return False
+        
     return True
 
 
@@ -128,6 +149,24 @@ def main():
                         help="Audio sample rate (default: 16000)")
     parser.add_argument("--batch-size", type=int, default=8, 
                         help="Batch size for transcription (default: 8)")
+    
+    # Add new parameters for memory optimization and parallel processing
+    parser.add_argument("--chunk-size", type=int, default=600,
+                        help="Size of audio chunks in seconds for memory-efficient processing (default: 600)")
+    parser.add_argument("--parallel-jobs", type=int, default=None,
+                        help="Number of parallel jobs for silence detection (default: automatic)")
+    parser.add_argument("--two-pass", action="store_true",
+                        help="Use two-pass transcription for improved segment boundaries")
+    
+    # Add new parameters for generation control
+    parser.add_argument("--temperature", type=float, default=0.0,
+                        help="Temperature for sampling, higher values make output more random (default: 0.0)")
+    parser.add_argument("--top-p", type=float, default=None,
+                        help="Top-p sampling probability threshold (default: None)")
+    parser.add_argument("--beam-size", type=int, default=5,
+                        help="Beam size for beam search (default: 5)")
+    
+    # Existing parameters
     parser.add_argument("--normalize", action="store_true", 
                         help="Normalize audio volume")
     parser.add_argument("--no-text-normalize", action="store_true", 
@@ -179,7 +218,13 @@ def main():
                 normalize=args.normalize,
                 normalize_text=not args.no_text_normalize,
                 print_timestamps=not args.no_timestamps,
-                verbose=verbose
+                verbose=verbose,
+                two_pass=args.two_pass,
+                chunk_size=args.chunk_size,
+                parallel_jobs=args.parallel_jobs,
+                temperature=args.temperature,
+                top_p=args.top_p,
+                beam_size=args.beam_size
             )
             
             # Handle JSON output if requested

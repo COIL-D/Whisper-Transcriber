@@ -6,14 +6,19 @@ import numpy as np
 import librosa
 import time
 import secrets
+import re
 from tqdm import tqdm
 from transformers import WhisperProcessor, WhisperForConditionalGeneration
 from huggingface_hub import login
+import concurrent.futures
+from pathlib import Path
+import tempfile
 
 from .audio_processing import (
     get_audio_duration,
     analyze_full_audio_for_silence,
-    create_segments_from_silence
+    create_segments_from_silence,
+    extract_audio_segment
 )
 from .utils import check_dependencies, format_timestamp, format_srt_timestamp, normalize_kannada, validate_file_path
 
@@ -141,7 +146,8 @@ class WhisperTranscriber:
     def transcribe(self, input_file, output=None, min_segment=5, max_segment=15, 
                   silence_duration=0.2, sample_rate=16000, batch_size=8, 
                   normalize=False, normalize_text=True, print_timestamps=False, 
-                  verbose=True, **kwargs):
+                  verbose=True, two_pass=False, chunk_size=600, parallel_jobs=None,
+                  temperature=0.0, top_p=None, beam_size=5, **kwargs):
         """
         Transcribe an audio file and optionally save the results to a file.
         
@@ -157,6 +163,12 @@ class WhisperTranscriber:
             normalize_text (bool): Whether to normalize transcription text
             print_timestamps (bool): Whether to print timestamps during processing
             verbose (bool): Whether to print processing information and transcripts during processing
+            two_pass (bool): Whether to use two-pass transcription for improved segment boundaries
+            chunk_size (int): Size of audio chunks in seconds for memory-efficient processing
+            parallel_jobs (int): Number of parallel jobs for silence detection (None for auto)
+            temperature (float): Temperature for sampling during generation (0.0 for deterministic)
+            top_p (float): Top-p probability threshold for nucleus sampling
+            beam_size (int): Beam size for beam search during generation
             **kwargs: Additional parameters for future compatibility
             
         Returns:
@@ -166,7 +178,8 @@ class WhisperTranscriber:
         script_start_time = time.time()
         
         # Sanitize inputs
-        self._validate_parameters(min_segment, max_segment, silence_duration, sample_rate, batch_size)
+        self._validate_parameters(min_segment, max_segment, silence_duration, sample_rate, batch_size, 
+                                 temperature, beam_size, chunk_size)
         
         # Check if input file exists and is safe
         if not os.path.isfile(input_file) or not validate_file_path(input_file):
@@ -184,25 +197,80 @@ class WhisperTranscriber:
         if verbose:
             print(f"Processing file: {input_file} (duration: {total_duration:.2f} seconds)")
         
-        # Analyze audio for silence points
-        silence_data = analyze_full_audio_for_silence(
-            input_file,
-            silence_duration=silence_duration,
-            adaptive=True,
-            min_silence_points=6
-        )
+        # Handle short audio files directly
+        if total_duration < min_segment and total_duration < max_segment:
+            if verbose:
+                print(f"Audio duration ({total_duration:.2f}s) is less than min_segment ({min_segment}s) and max_segment ({max_segment}s). Transcribing as a single segment.")
+            segment_boundaries = [0.0, total_duration]
+        else:
+            # Determine parallel jobs if not specified
+            if parallel_jobs is None:
+                parallel_jobs = min(os.cpu_count() or 2, 8)  # Default to min(CPU count, 8)
+            
+            # Analyze audio for silence points with parallel processing
+            if verbose:
+                print(f"Using {parallel_jobs} parallel jobs for silence detection")
+                
+            silence_data = analyze_full_audio_for_silence(
+                input_file,
+                silence_duration=silence_duration,
+                adaptive=True,
+                min_silence_points=6,
+                parallel_jobs=parallel_jobs,
+                chunk_size=chunk_size
+            )
+            
+            # Create segment boundaries from silence data
+            segment_boundaries = create_segments_from_silence(
+                silence_data,
+                total_duration,
+                min_segment_length=min_segment,
+                max_segment_length=max_segment
+            )
         
-        # Create segment boundaries from silence data
-        segment_boundaries = create_segments_from_silence(
-            silence_data,
-            total_duration,
-            min_segment_length=min_segment,
-            max_segment_length=max_segment
-        )
+        # Two-pass approach for improved segment boundaries
+        if two_pass and total_duration > max_segment * 2:
+            if verbose:
+                print("Performing two-pass transcription for improved segment boundaries...")
+            
+            # First pass: Initial transcription with current segment boundaries
+            initial_results = self._transcribe_audio(
+                input_file,
+                segment_boundaries,
+                sample_rate=sample_rate,
+                normalize=normalize,
+                batch_size=batch_size,
+                normalize_text=normalize_text,
+                verbose=False,  # No verbose output for first pass
+                print_timestamps=False,
+                chunk_size=chunk_size,
+                temperature=temperature,
+                top_p=top_p,
+                beam_size=beam_size
+            )
+            
+            # Refine segment boundaries based on linguistic analysis
+            if verbose:
+                print("Refining segment boundaries based on initial transcription...")
+                
+            refined_boundaries = self._refine_segment_boundaries(
+                initial_results,
+                segment_boundaries,
+                total_duration,
+                min_segment_length=min_segment,
+                max_segment_length=max_segment
+            )
+            
+            # Use refined segment boundaries
+            segment_boundaries = refined_boundaries
+            
+            if verbose:
+                print(f"Refined segment count: {len(segment_boundaries) - 1}")
         
-        # Transcribe using segment boundaries
+        # Perform final transcription with (potentially refined) segment boundaries
         if verbose:
             print("Starting transcription...")
+        
         results = self._transcribe_audio(
             input_file,
             segment_boundaries,
@@ -211,7 +279,11 @@ class WhisperTranscriber:
             batch_size=batch_size,
             normalize_text=normalize_text,
             print_timestamps=print_timestamps,
-            verbose=verbose
+            verbose=verbose,
+            chunk_size=chunk_size,
+            temperature=temperature,
+            top_p=top_p,
+            beam_size=beam_size
         )
         
         if not results:
@@ -236,8 +308,9 @@ class WhisperTranscriber:
             print("\nTranscription complete!")
         
         return results
-    
-    def _validate_parameters(self, min_segment, max_segment, silence_duration, sample_rate, batch_size):
+
+    def _validate_parameters(self, min_segment, max_segment, silence_duration, sample_rate, batch_size,
+                          temperature=0.0, beam_size=5, chunk_size=600):
         """
         Validate the parameters to prevent attacks or errors.
         
@@ -247,11 +320,14 @@ class WhisperTranscriber:
             silence_duration (float): Minimum silence duration in seconds
             sample_rate (int): Audio sample rate
             batch_size (int): Batch size for transcription
+            temperature (float): Temperature parameter for generation
+            beam_size (int): Beam size for beam search
+            chunk_size (int): Size of audio chunks in seconds
             
         Raises:
             ValueError: If any parameter is invalid
         """
-        # Check types
+        # Original parameter checks
         if not isinstance(min_segment, (int, float)) or min_segment <= 0:
             raise ValueError(f"Invalid min_segment: {min_segment}")
         
@@ -285,12 +361,23 @@ class WhisperTranscriber:
         valid_sample_rates = [8000, 16000, 22050, 24000, 32000, 44100, 48000]
         if sample_rate not in valid_sample_rates:
             print(f"Warning: Unusual sample_rate {sample_rate}. Standard rates are {valid_sample_rates}")
+            
+        # New parameter checks
+        if not isinstance(temperature, (int, float)) or temperature < 0 or temperature > 1.5:
+            raise ValueError(f"Invalid temperature: {temperature}. Must be between 0.0 and 1.5")
+            
+        if not isinstance(beam_size, int) or beam_size < 1 or beam_size > 10:
+            raise ValueError(f"Invalid beam_size: {beam_size}. Must be between 1 and 10")
+            
+        if not isinstance(chunk_size, int) or chunk_size < 10 or chunk_size > 3600:
+            raise ValueError(f"Invalid chunk_size: {chunk_size}. Must be between 10 and 3600 seconds")
     
     def _transcribe_audio(self, input_file, segment_boundaries, sample_rate=16000, 
-                         normalize=False, batch_size=8, normalize_text=True, 
-                         print_timestamps=False, verbose=True):
+                        normalize=False, batch_size=8, normalize_text=True, 
+                        print_timestamps=False, verbose=True, chunk_size=600,
+                        temperature=0.0, top_p=None, beam_size=5):
         """
-        Transcribes audio using segment boundaries for timing information.
+        Transcribes audio using segment boundaries for timing information with memory-efficient chunking.
         
         Args:
             input_file (str): Path to the audio file
@@ -301,6 +388,10 @@ class WhisperTranscriber:
             normalize_text (bool): Whether to normalize transcription text
             print_timestamps (bool): Whether to print timestamps during processing
             verbose (bool): Whether to print progress and transcripts during processing
+            chunk_size (int): Size of audio chunks in seconds for memory-efficient processing
+            temperature (float): Temperature for sampling (0.0 for deterministic)
+            top_p (float): Top-p probability threshold for nucleus sampling
+            beam_size (int): Beam size for beam search
             
         Returns:
             list: List of transcription results
@@ -323,39 +414,42 @@ class WhisperTranscriber:
         
         if verbose:
             print(f"Processing {len(segment_pairs)} audio segments...")
+        
+        # Set up progress bar if verbose
+        if verbose:
+            pbar = tqdm(total=len(segment_pairs), desc="Transcribing segments", unit="segment")
+            
         results = []
         
-        # Load the full audio file
-        try:
-            full_audio, _ = librosa.load(input_file, sr=sample_rate, mono=True)
-        except Exception as e:
-            if verbose:
-                print(f"Error loading audio file: {e}")
-            return []
-        
-        # Process in batches to optimize memory usage and GPU utilization
-        
+        # Process in batches, with memory efficiency (don't load entire file at once)
         for batch_start in range(0, len(segment_pairs), batch_size):
             batch_end = min(batch_start + batch_size, len(segment_pairs))
             current_batch = segment_pairs[batch_start:batch_end]
             
-            # Extract segments from the full audio
+            # Extract segments from audio file directly rather than loading the entire file
             batch_segments = []
             for i, (segment_start, segment_end) in enumerate(current_batch):
-                # Calculate sample positions
-                start_sample = int(segment_start * sample_rate)
-                end_sample = int(segment_end * sample_rate)
-                
-                # Extract segment from the full audio
-                if end_sample <= len(full_audio):
-                    segment_audio = full_audio[start_sample:end_sample]
-                    batch_segments.append({
-                        "start": segment_start,
-                        "end": segment_end,
-                        "duration": segment_end - segment_start,
-                        "audio": segment_audio,
-                        "index": batch_start + i  # Track original position
-                    })
+                try:
+                    # Extract audio segment directly using librosa's offset and duration parameters
+                    segment_audio = extract_audio_segment(
+                        input_file, 
+                        segment_start, 
+                        segment_end - segment_start,
+                        sample_rate=sample_rate,
+                        normalize=normalize
+                    )
+                    
+                    if segment_audio is not None:
+                        batch_segments.append({
+                            "start": segment_start,
+                            "end": segment_end,
+                            "duration": segment_end - segment_start,
+                            "audio": segment_audio,
+                            "index": batch_start + i  # Track original position
+                        })
+                except Exception as e:
+                    if verbose:
+                        print(f"Error extracting audio segment [{format_timestamp(segment_start)} --> {format_timestamp(segment_end)}]: {str(e)}")
             
             # Transcribe the batch if we have segments
             if batch_segments:
@@ -370,11 +464,24 @@ class WhisperTranscriber:
                             return_tensors="pt"
                         ).input_features.to(self.device)
                         
+                        # Prepare generation config with enhanced parameters
+                        generation_kwargs = {
+                            "max_length": 448,
+                            "num_beams": beam_size,
+                            "early_stopping": True,
+                        }
+                        
+                        # Add temperature if non-zero (for non-deterministic output)
+                        if temperature > 0:
+                            generation_kwargs["temperature"] = temperature
+                            
+                        # Add top_p if specified
+                        if top_p is not None and top_p > 0 and top_p < 1:
+                            generation_kwargs["top_p"] = top_p
+                        
                         predicted_ids = self.model.generate(
                             batch_input_features,
-                            max_length=448,
-                            num_beams=5,
-                            early_stopping=True
+                            **generation_kwargs
                         )
                         
                         transcripts = self.processor.batch_decode(
@@ -413,14 +520,142 @@ class WhisperTranscriber:
                                 # Add transcript only in verbose mode
                                 output_line += transcript
                                 print(output_line)
+                                
+                        # Update progress bar if verbose
+                        if verbose:
+                            pbar.update(len(batch_segments))
+                            
                 except Exception as e:
                     if verbose:
                         print(f"Error transcribing batch: {str(e)}")
+                    
+                # Clear GPU memory between batches
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
             
+        # Close progress bar if verbose
+        if verbose:
+            pbar.close()
         
         # Sort results by their original index
         results.sort(key=lambda x: x["index"])
         return results
+        
+    def _refine_segment_boundaries(self, initial_results, original_boundaries, total_duration,
+                                min_segment_length=5, max_segment_length=15):
+        """
+        Refines segment boundaries based on linguistic analysis of initial transcription.
+        
+        Args:
+            initial_results (list): List of initial transcription results
+            original_boundaries (list): Original segment boundaries
+            total_duration (float): Total audio duration
+            min_segment_length (float): Minimum segment length
+            max_segment_length (float): Maximum segment length
+            
+        Returns:
+            list: Refined segment boundaries
+        """
+        if not initial_results or len(initial_results) < 2:
+            return original_boundaries
+            
+        refined_boundaries = [0.0]  # Always start at 0
+        
+        # Analyzing transcript patterns to find natural breaks
+        for result in initial_results:
+            transcript = result["transcript"]
+            segment_start = result["start"]
+            segment_end = result["end"]
+            segment_duration = result["duration"]
+            
+            # Skip very short segments as they're unlikely to need refinement
+            if segment_duration < min_segment_length:
+                continue
+                
+            # If segment is already at or below max length, keep its end boundary
+            if segment_duration <= max_segment_length:
+                if segment_end not in refined_boundaries and segment_end <= total_duration:
+                    refined_boundaries.append(segment_end)
+                continue
+                
+            # For long segments, look for natural language break points
+            sentences = self._split_into_sentences(transcript)
+            
+            if len(sentences) <= 1:
+                # No clear sentence breaks, divide evenly
+                num_parts = max(1, int(segment_duration / max_segment_length))
+                part_duration = segment_duration / num_parts
+                
+                for i in range(1, num_parts):
+                    new_boundary = segment_start + (i * part_duration)
+                    if new_boundary not in refined_boundaries:
+                        refined_boundaries.append(new_boundary)
+                
+                # Always add the segment end if not already in boundaries
+                if segment_end not in refined_boundaries:
+                    refined_boundaries.append(segment_end)
+            else:
+                # Use sentence breaks to guide segmentation
+                total_chars = sum(len(s) for s in sentences)
+                if total_chars == 0:  # Safeguard against empty transcripts
+                    if segment_end not in refined_boundaries:
+                        refined_boundaries.append(segment_end)
+                    continue
+                    
+                char_per_second = total_chars / segment_duration
+                char_count = 0
+                last_boundary = segment_start
+                
+                for i, sentence in enumerate(sentences):
+                    char_count += len(sentence)
+                    estimated_time = segment_start + (char_count / char_per_second)
+                    
+                    # Add boundary if enough time has passed
+                    if (estimated_time - last_boundary >= min_segment_length or 
+                        i == len(sentences) - 1):  # Always include the last sentence end
+                        
+                        # Don't exceed segment_end
+                        boundary = min(estimated_time, segment_end)
+                        
+                        if (boundary not in refined_boundaries and 
+                            boundary > refined_boundaries[-1] and
+                            boundary <= total_duration):
+                            refined_boundaries.append(boundary)
+                            last_boundary = boundary
+        
+        # Ensure we include the total_duration as the final boundary
+        if total_duration not in refined_boundaries:
+            refined_boundaries.append(total_duration)
+            
+        # Final validation pass: remove boundaries that are too close together
+        min_gap = 0.5  # Minimum 0.5s gap between segments
+        filtered_boundaries = [refined_boundaries[0]]  # Always keep the first boundary
+        
+        for i in range(1, len(refined_boundaries)):
+            if refined_boundaries[i] - filtered_boundaries[-1] >= min_gap:
+                filtered_boundaries.append(refined_boundaries[i])
+        
+        return sorted(filtered_boundaries)
+        
+    def _split_into_sentences(self, transcript):
+        """
+        Splits transcript text into sentences based on punctuation.
+        
+        Args:
+            transcript (str): The transcript to split
+            
+        Returns:
+            list: List of sentences
+        """
+        # Basic sentence splitting on punctuation
+        # More sophisticated NLP could be used here with external libraries
+        sentence_pattern = r'[.!?।॥]+\s*'
+        sentences = re.split(sentence_pattern, transcript)
+        
+        # Remove empty sentences
+        sentences = [s.strip() for s in sentences if s.strip()]
+        
+        return sentences
 
     def save_transcription(self, results, output_file):
         """
