@@ -177,6 +177,45 @@ class WhisperTranscriber:
         # Start timing the process
         script_start_time = time.time()
         
+        # Check for parameter inconsistency before validation
+        if min_segment >= max_segment:
+            if verbose:
+                print(f"Error: min_segment ({min_segment}) must be less than max_segment ({max_segment})")
+                
+            # Try to prompt for corrected values
+            try:
+                # Check if running in interactive environment
+                import sys
+                is_interactive = hasattr(sys, 'ps1') or sys.flags.interactive
+                
+                if is_interactive:
+                    print("Please enter corrected values:")
+                    try:
+                        new_min = float(input(f"Enter min_segment (current: {min_segment}, must be < {max_segment}): "))
+                        if new_min >= max_segment:
+                            new_max = float(input(f"Enter max_segment (current: {max_segment}, must be > {new_min}): "))
+                        else:
+                            new_max = max_segment
+                            
+                        print(f"Using corrected values: min_segment={new_min}, max_segment={new_max}")
+                        min_segment = new_min
+                        max_segment = new_max
+                    except ValueError as e:
+                        print(f"Invalid input: {e}")
+                        print("Using default values: min_segment=5, max_segment=15")
+                        min_segment = 5
+                        max_segment = 15
+                else:
+                    # Not in interactive mode, use defaults
+                    print("Not in interactive environment. Using default values: min_segment=5, max_segment=15")
+                    min_segment = 5
+                    max_segment = 15
+            except Exception:
+                # Fall back to defaults if anything goes wrong
+                print("Error detecting environment. Using default values: min_segment=5, max_segment=15")
+                min_segment = 5
+                max_segment = 15
+        
         # Sanitize inputs
         self._validate_parameters(min_segment, max_segment, silence_duration, sample_rate, batch_size, 
                                  temperature, beam_size, chunk_size)
@@ -202,7 +241,24 @@ class WhisperTranscriber:
             if verbose:
                 print(f"Audio duration ({total_duration:.2f}s) is less than min_segment ({min_segment}s) and max_segment ({max_segment}s). Transcribing as a single segment.")
             segment_boundaries = [0.0, total_duration]
+            
+            # Skip silence detection and directly transcribe the short audio
+            results = self._transcribe_audio(
+                input_file,
+                segment_boundaries,
+                sample_rate=sample_rate,
+                normalize=normalize,
+                batch_size=batch_size,
+                normalize_text=normalize_text,
+                print_timestamps=print_timestamps,
+                verbose=verbose,
+                chunk_size=chunk_size,
+                temperature=temperature,
+                top_p=top_p,
+                beam_size=beam_size
+            )
         else:
+            # For longer audio, do the full silence detection and transcription
             # Determine parallel jobs if not specified
             if parallel_jobs is None:
                 parallel_jobs = min(os.cpu_count() or 2, 8)  # Default to min(CPU count, 8)
@@ -228,63 +284,63 @@ class WhisperTranscriber:
                 max_segment_length=max_segment
             )
         
-        # Two-pass approach for improved segment boundaries
-        if two_pass and total_duration > max_segment * 2:
-            if verbose:
-                print("Performing two-pass transcription for improved segment boundaries...")
+            # Two-pass approach for improved segment boundaries
+            if two_pass and total_duration > max_segment * 2:
+                if verbose:
+                    print("Performing two-pass transcription for improved segment boundaries...")
+                
+                # First pass: Initial transcription with current segment boundaries
+                initial_results = self._transcribe_audio(
+                    input_file,
+                    segment_boundaries,
+                    sample_rate=sample_rate,
+                    normalize=normalize,
+                    batch_size=batch_size,
+                    normalize_text=normalize_text,
+                    verbose=False,  # No verbose output for first pass
+                    print_timestamps=False,
+                    chunk_size=chunk_size,
+                    temperature=temperature,
+                    top_p=top_p,
+                    beam_size=beam_size
+                )
+                
+                # Refine segment boundaries based on linguistic analysis
+                if verbose:
+                    print("Refining segment boundaries based on initial transcription...")
+                    
+                refined_boundaries = self._refine_segment_boundaries(
+                    initial_results,
+                    segment_boundaries,
+                    total_duration,
+                    min_segment_length=min_segment,
+                    max_segment_length=max_segment
+                )
+                
+                # Use refined segment boundaries
+                segment_boundaries = refined_boundaries
+                
+                if verbose:
+                    print(f"Refined segment count: {len(segment_boundaries) - 1}")
             
-            # First pass: Initial transcription with current segment boundaries
-            initial_results = self._transcribe_audio(
+            # Perform final transcription with (potentially refined) segment boundaries
+            if verbose:
+                print("Starting transcription...")
+            
+            results = self._transcribe_audio(
                 input_file,
                 segment_boundaries,
                 sample_rate=sample_rate,
                 normalize=normalize,
                 batch_size=batch_size,
                 normalize_text=normalize_text,
-                verbose=False,  # No verbose output for first pass
-                print_timestamps=False,
+                print_timestamps=print_timestamps,
+                verbose=verbose,
                 chunk_size=chunk_size,
                 temperature=temperature,
                 top_p=top_p,
                 beam_size=beam_size
             )
-            
-            # Refine segment boundaries based on linguistic analysis
-            if verbose:
-                print("Refining segment boundaries based on initial transcription...")
-                
-            refined_boundaries = self._refine_segment_boundaries(
-                initial_results,
-                segment_boundaries,
-                total_duration,
-                min_segment_length=min_segment,
-                max_segment_length=max_segment
-            )
-            
-            # Use refined segment boundaries
-            segment_boundaries = refined_boundaries
-            
-            if verbose:
-                print(f"Refined segment count: {len(segment_boundaries) - 1}")
-        
-        # Perform final transcription with (potentially refined) segment boundaries
-        if verbose:
-            print("Starting transcription...")
-        
-        results = self._transcribe_audio(
-            input_file,
-            segment_boundaries,
-            sample_rate=sample_rate,
-            normalize=normalize,
-            batch_size=batch_size,
-            normalize_text=normalize_text,
-            print_timestamps=print_timestamps,
-            verbose=verbose,
-            chunk_size=chunk_size,
-            temperature=temperature,
-            top_p=top_p,
-            beam_size=beam_size
-        )
         
         if not results:
             raise ValueError("No transcription results")

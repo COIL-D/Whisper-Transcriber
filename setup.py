@@ -45,6 +45,7 @@ setup(
         "regex",
         "pathlib",
         "concurrent-log-handler",  # For better logging with multiprocessing
+        "ffmpeg-python",  # For more robust audio processing capabilities
     ],
     entry_points={
         "console_scripts": [
