@@ -123,7 +123,7 @@ results = transcriber.transcribe(
     two_pass=True,              # Use two-pass transcription for better segments
     chunk_size=900,             # Process in 15-min chunks (memory efficient)
     parallel_jobs=4,            # Use 4 parallel processes for silence detection
-    temperature=1,            # Deterministic output (0.0) or add randomness (>0.0)
+    temperature=1,              # Deterministic output (0.0) or add randomness (>0.0)
     top_p=0.95,                 # Only used when temperature > 0
     num_beams=5,                # Number of beams for beam search (higher = better quality but slower)
     language="en"               # Specify language for transcription (e.g., "en" for English)
