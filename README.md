@@ -124,8 +124,8 @@ results = transcriber.transcribe(
     chunk_size=900,             # Process in 15-min chunks (memory efficient)
     parallel_jobs=4,            # Use 4 parallel processes for silence detection
     temperature=0.0,            # Deterministic output (0.0) or add randomness (>0.0)
-    top_p=None,                 # Only used when temperature > 0
-    beam_size=5,                # Larger beam search for better quality
+    top_p=None,                 # Only used when temperature > 0ral text
+    beam_size=5,                # Larger beam search for better qualityse num_beams instead)
     language="en"               # Specify language for transcription (e.g., "en" for English)
 )
 
@@ -156,6 +156,8 @@ for i, segment in enumerate(results):
 - `temperature`: Controls randomness in generation (0.0 for deterministic, higher for more variety)
 - `top_p`: Top-p probability threshold for nucleus sampling (between 0 and 1)
 - `beam_size`: Beam size for beam search during generation (higher values = better quality but slower)
+- `num_beams`: Alias for beam_size, for compatibility with HuggingFace Transformers
+- `language`: Target language code for transcription (e.g., 'en' for English, 'fr' for French, etc.)
 
 ## License
 

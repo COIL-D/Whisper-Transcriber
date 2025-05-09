@@ -147,7 +147,7 @@ class WhisperTranscriber:
                   silence_duration=0.2, sample_rate=16000, batch_size=8, 
                   normalize=False, normalize_text=True, print_timestamps=False, 
                   verbose=True, two_pass=False, chunk_size=600, parallel_jobs=None,
-                  temperature=0.0, top_p=None, beam_size=5, **kwargs):
+                  temperature=0.0, top_p=None, num_beams=5, language=None, **kwargs):
         """
         Transcribe an audio file and optionally save the results to a file.
         
@@ -168,7 +168,8 @@ class WhisperTranscriber:
             parallel_jobs (int): Number of parallel jobs for silence detection (None for auto)
             temperature (float): Temperature for sampling during generation (0.0 for deterministic)
             top_p (float): Top-p probability threshold for nucleus sampling
-            beam_size (int): Beam size for beam search during generation
+            num_beams (int): Number of beams for beam search during generation (higher = better quality but slower)
+            language (str, optional): Language code for transcription
             **kwargs: Additional parameters for future compatibility
             
         Returns:
@@ -177,48 +178,11 @@ class WhisperTranscriber:
         # Start timing the process
         script_start_time = time.time()
         
-        # Check for parameter inconsistency before validation
-        if min_segment >= max_segment:
-            if verbose:
-                print(f"Error: min_segment ({min_segment}) must be less than max_segment ({max_segment})")
-                
-            # Try to prompt for corrected values
-            try:
-                # Check if running in interactive environment
-                import sys
-                is_interactive = hasattr(sys, 'ps1') or sys.flags.interactive
-                
-                if is_interactive:
-                    print("Please enter corrected values:")
-                    try:
-                        new_min = float(input(f"Enter min_segment (current: {min_segment}, must be < {max_segment}): "))
-                        if new_min >= max_segment:
-                            new_max = float(input(f"Enter max_segment (current: {max_segment}, must be > {new_min}): "))
-                        else:
-                            new_max = max_segment
-                            
-                        print(f"Using corrected values: min_segment={new_min}, max_segment={new_max}")
-                        min_segment = new_min
-                        max_segment = new_max
-                    except ValueError as e:
-                        print(f"Invalid input: {e}")
-                        print("Using default values: min_segment=5, max_segment=15")
-                        min_segment = 5
-                        max_segment = 15
-                else:
-                    # Not in interactive mode, use defaults
-                    print("Not in interactive environment. Using default values: min_segment=5, max_segment=15")
-                    min_segment = 5
-                    max_segment = 15
-            except Exception:
-                # Fall back to defaults if anything goes wrong
-                print("Error detecting environment. Using default values: min_segment=5, max_segment=15")
-                min_segment = 5
-                max_segment = 15
+        # Remove backward compatibility with beam_size
         
         # Sanitize inputs
         self._validate_parameters(min_segment, max_segment, silence_duration, sample_rate, batch_size, 
-                                 temperature, beam_size, chunk_size)
+                                 temperature, num_beams, chunk_size)
         
         # Check if input file exists and is safe
         if not os.path.isfile(input_file) or not validate_file_path(input_file):
@@ -255,7 +219,8 @@ class WhisperTranscriber:
                 chunk_size=chunk_size,
                 temperature=temperature,
                 top_p=top_p,
-                beam_size=beam_size
+                num_beams=num_beams,
+                language=language
             )
         else:
             # For longer audio, do the full silence detection and transcription
@@ -302,7 +267,8 @@ class WhisperTranscriber:
                     chunk_size=chunk_size,
                     temperature=temperature,
                     top_p=top_p,
-                    beam_size=beam_size
+                    num_beams=num_beams,
+                    language=language
                 )
                 
                 # Refine segment boundaries based on linguistic analysis
@@ -339,7 +305,8 @@ class WhisperTranscriber:
                 chunk_size=chunk_size,
                 temperature=temperature,
                 top_p=top_p,
-                beam_size=beam_size
+                num_beams=num_beams,
+                language=language
             )
         
         if not results:
@@ -366,7 +333,7 @@ class WhisperTranscriber:
         return results
 
     def _validate_parameters(self, min_segment, max_segment, silence_duration, sample_rate, batch_size,
-                          temperature=0.0, beam_size=5, chunk_size=600):
+                          temperature=0.0, num_beams=5, chunk_size=600):
         """
         Validate the parameters to prevent attacks or errors.
         
@@ -377,7 +344,7 @@ class WhisperTranscriber:
             sample_rate (int): Audio sample rate
             batch_size (int): Batch size for transcription
             temperature (float): Temperature parameter for generation
-            beam_size (int): Beam size for beam search
+            num_beams (int): Number of beams for beam search
             chunk_size (int): Size of audio chunks in seconds
             
         Raises:
@@ -422,8 +389,8 @@ class WhisperTranscriber:
         if not isinstance(temperature, (int, float)) or temperature < 0 or temperature > 1.5:
             raise ValueError(f"Invalid temperature: {temperature}. Must be between 0.0 and 1.5")
             
-        if not isinstance(beam_size, int) or beam_size < 1 or beam_size > 10:
-            raise ValueError(f"Invalid beam_size: {beam_size}. Must be between 1 and 10")
+        if not isinstance(num_beams, int) or num_beams < 1 or num_beams > 10:
+            raise ValueError(f"Invalid num_beams: {num_beams}. Must be between 1 and 10")
             
         if not isinstance(chunk_size, int) or chunk_size < 10 or chunk_size > 3600:
             raise ValueError(f"Invalid chunk_size: {chunk_size}. Must be between 10 and 3600 seconds")
@@ -431,7 +398,7 @@ class WhisperTranscriber:
     def _transcribe_audio(self, input_file, segment_boundaries, sample_rate=16000, 
                         normalize=False, batch_size=8, normalize_text=True, 
                         print_timestamps=False, verbose=True, chunk_size=600,
-                        temperature=0.0, top_p=None, beam_size=5):
+                        temperature=0.0, top_p=None, num_beams=5, language=None):
         """
         Transcribes audio using segment boundaries for timing information with memory-efficient chunking.
         
@@ -447,7 +414,8 @@ class WhisperTranscriber:
             chunk_size (int): Size of audio chunks in seconds for memory-efficient processing
             temperature (float): Temperature for sampling (0.0 for deterministic)
             top_p (float): Top-p probability threshold for nucleus sampling
-            beam_size (int): Beam size for beam search
+            num_beams (int): Number of beams for beam search
+            language (str, optional): Language code for transcription
             
         Returns:
             list: List of transcription results
@@ -526,11 +494,11 @@ class WhisperTranscriber:
                         }
                         
                         # Handle beam search properly
-                        if beam_size > 1:
-                            generation_kwargs["num_beams"] = beam_size
+                        if num_beams > 1:
+                            generation_kwargs["num_beams"] = num_beams
                             generation_kwargs["early_stopping"] = True
                         else:
-                            # Explicitly set early_stopping=False for greedy search to avoid warnings
+                            # For greedy search, explicitly set num_beams=1 and early_stopping=False
                             generation_kwargs["num_beams"] = 1
                             generation_kwargs["early_stopping"] = False
                         

@@ -166,6 +166,10 @@ def main():
     parser.add_argument("--beam-size", type=int, default=5,
                         help="Beam size for beam search (default: 5)")
     
+    # Add new parameter for beam search (as an alias for beam-size)
+    parser.add_argument("--num-beams", type=int, default=None,
+                        help="Alias for beam-size (number of beams for beam search)")
+    
     # Existing parameters
     parser.add_argument("--normalize", action="store_true", 
                         help="Normalize audio volume")
@@ -207,6 +211,12 @@ def main():
             # Determine verbosity - always set to False for JSON output
             verbose = not args.quiet and not args.json
             
+            # Handle num_beams overriding beam_size if both are provided
+            if args.num_beams is not None:
+                beam_size = args.num_beams
+            else:
+                beam_size = args.beam_size
+            
             results = transcriber.transcribe(
                 args.input,
                 output=args.output,
@@ -224,7 +234,7 @@ def main():
                 parallel_jobs=args.parallel_jobs,
                 temperature=args.temperature,
                 top_p=args.top_p,
-                beam_size=args.beam_size
+                beam_size=beam_size
             )
             
             # Handle JSON output if requested
