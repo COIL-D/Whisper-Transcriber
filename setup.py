@@ -36,14 +36,14 @@ setup(
     ],
     python_requires=">=3.7",
     install_requires=[
-        "torch>=1.7.0",
-        "numpy>=1.19.0",
-        "tqdm>=4.64.0",
-        "librosa>=0.9.2",
-        "transformers>=4.26.0",
-        "huggingface_hub>=0.12.0",
-        "regex>=2022.10.31",
-        "pathlib>=1.0.1",
+        "torch",
+        "numpy",
+        "tqdm",
+        "librosa",
+        "transformers",
+        "huggingface_hub",
+        "regex",
+        "pathlib",
     ],
     entry_points={
         "console_scripts": [
