@@ -523,17 +523,21 @@ class WhisperTranscriber:
                         # Prepare generation config with enhanced parameters
                         generation_kwargs = {
                             "max_length": 448,
-                            "num_beams": beam_size,
                         }
                         
-                        # Only set early_stopping when using beam search (beam_size > 1)
+                        # Handle beam search properly
                         if beam_size > 1:
+                            generation_kwargs["num_beams"] = beam_size
                             generation_kwargs["early_stopping"] = True
+                        else:
+                            # Explicitly set early_stopping=False for greedy search to avoid warnings
+                            generation_kwargs["num_beams"] = 1
+                            generation_kwargs["early_stopping"] = False
                         
                         # Add temperature if non-zero (for non-deterministic output)
                         if temperature > 0:
-                            generation_kwargs["temperature"] = temperature
                             generation_kwargs["do_sample"] = True
+                            generation_kwargs["temperature"] = temperature
                             
                             # Add top_p if specified (only relevant with do_sample=True)
                             if top_p is not None and top_p > 0 and top_p < 1:
