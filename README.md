@@ -52,7 +52,7 @@ whisper-transcribe audio_file.mp3 -m openai/whisper-small \
 whisper-transcribe long_audio.mp3 --chunk-size 900 --parallel-jobs 4
 
 # Enhanced generation with two-pass transcription
-whisper-transcribe podcast.mp3 --two-pass --temperature 0.1 --beam-size 8
+whisper-transcribe podcast.mp3 --two-pass --temperature 0.1 --num-beams 8
 
 # Run in quiet mode (no transcript printing during processing)
 whisper-transcribe audio_file.mp3 --quiet
@@ -82,7 +82,7 @@ whisper-transcribe audio_file.mp3 --json
 - `--two-pass`: Use two-pass transcription for improved segment boundaries
 - `--temperature`: Temperature for sampling, higher values make output more random (default: 0.0)
 - `--top-p`: Top-p sampling probability threshold (default: None)
-- `--beam-size`: Beam size for beam search (default: 5)
+- `--num-beams`: Number of beams for beam search (default: 5)
 
 ### Python Library
 
@@ -123,9 +123,9 @@ results = transcriber.transcribe(
     two_pass=True,              # Use two-pass transcription for better segments
     chunk_size=900,             # Process in 15-min chunks (memory efficient)
     parallel_jobs=4,            # Use 4 parallel processes for silence detection
-    temperature=0.0,            # Deterministic output (0.0) or add randomness (>0.0)
-    top_p=None,                 # Only used when temperature > 0ral text
-    beam_size=5,                # Larger beam search for better qualityse num_beams instead)
+    temperature=1,            # Deterministic output (0.0) or add randomness (>0.0)
+    top_p=0.95,                 # Only used when temperature > 0
+    num_beams=5,                # Number of beams for beam search (higher = better quality but slower)
     language="en"               # Specify language for transcription (e.g., "en" for English)
 )
 
@@ -155,8 +155,7 @@ for i, segment in enumerate(results):
 - `parallel_jobs`: Number of parallel jobs for silence detection (None for automatic)
 - `temperature`: Controls randomness in generation (0.0 for deterministic, higher for more variety)
 - `top_p`: Top-p probability threshold for nucleus sampling (between 0 and 1)
-- `beam_size`: Beam size for beam search during generation (higher values = better quality but slower)
-- `num_beams`: Alias for beam_size, for compatibility with HuggingFace Transformers
+- `num_beams`: Number of beams for beam search during generation (higher values = better quality but slower)
 - `language`: Target language code for transcription (e.g., 'en' for English, 'fr' for French, etc.)
 
 ## License
