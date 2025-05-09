@@ -524,16 +524,23 @@ class WhisperTranscriber:
                         generation_kwargs = {
                             "max_length": 448,
                             "num_beams": beam_size,
-                            "early_stopping": True,
                         }
+                        
+                        # Only set early_stopping when using beam search (beam_size > 1)
+                        if beam_size > 1:
+                            generation_kwargs["early_stopping"] = True
                         
                         # Add temperature if non-zero (for non-deterministic output)
                         if temperature > 0:
                             generation_kwargs["temperature"] = temperature
+                            generation_kwargs["do_sample"] = True
                             
-                        # Add top_p if specified
-                        if top_p is not None and top_p > 0 and top_p < 1:
-                            generation_kwargs["top_p"] = top_p
+                            # Add top_p if specified (only relevant with do_sample=True)
+                            if top_p is not None and top_p > 0 and top_p < 1:
+                                generation_kwargs["top_p"] = top_p
+                        # If temperature=0 (deterministic) and top_p is specified, warn user
+                        elif top_p is not None and top_p > 0 and top_p < 1:
+                            print("Warning: top_p is only used when temperature > 0. Ignoring top_p value.")
                         
                         predicted_ids = self.model.generate(
                             batch_input_features,
